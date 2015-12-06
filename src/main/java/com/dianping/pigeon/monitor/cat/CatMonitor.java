@@ -25,7 +25,8 @@ public class CatMonitor implements Monitor {
 	private static final Logger logger = LoggerLoader.getLogger(CatMonitor.class);
 	private volatile long errorCounter = 0L;
 	private MessageProducer producer = null;
-
+	private ThreadLocal<MonitorTransaction> tlCallTransaction = new ThreadLocal<MonitorTransaction>();
+	private ThreadLocal<MonitorTransaction> tlServiceTransaction = new ThreadLocal<MonitorTransaction>();
 	volatile boolean isInitialized = false;
 
 	@Override
@@ -49,9 +50,21 @@ public class CatMonitor implements Monitor {
 
 	@Override
 	public MonitorTransaction createTransaction(String name, String uri, Object invocationContext) {
+		MonitorTransaction transaction = doCreateTransaction(name, uri, invocationContext);
+		return transaction;
+	}
+
+	public void setCurrentCallTransaction(MonitorTransaction transaction) {
+		tlCallTransaction.set(transaction);
+	}
+
+	private MonitorTransaction doCreateTransaction(String name, String uri, Object invocationContext) {
 		if (producer != null) {
-			Transaction transaction = producer.newTransaction(name, uri);
-			return new CatMonitorTransaction(this, transaction, (InvocationContext) invocationContext);
+			Transaction transaction = null;
+			transaction = producer.newTransaction(name, uri);
+			CatMonitorTransaction catTransaction = new CatMonitorTransaction(this, transaction,
+					(InvocationContext) invocationContext);
+			return catTransaction;
 		}
 		return null;
 	}
@@ -130,17 +143,32 @@ public class CatMonitor implements Monitor {
 	}
 
 	@Override
-	public MonitorTransaction getCurrentTransaction() {
-		if (Cat.getManager() != null) {
-			Transaction transaction = Cat.getManager().getPeekTransaction();
-			if (transaction != null) {
-				return new CatMonitorTransaction(this, transaction, null);
-			}
-		}
-		return null;
+	public MonitorTransaction getCurrentCallTransaction() {
+		return tlCallTransaction.get();
 	}
-	
+
 	public String toString() {
 		return "CatMonitor";
 	}
+
+	@Override
+	public void clearCallTransaction() {
+		tlCallTransaction.remove();
+	}
+
+	@Override
+	public MonitorTransaction getCurrentServiceTransaction() {
+		return tlServiceTransaction.get();
+	}
+
+	@Override
+	public void setCurrentServiceTransaction(MonitorTransaction transaction) {
+		tlServiceTransaction.set(transaction);
+	}
+
+	@Override
+	public void clearServiceTransaction() {
+		tlServiceTransaction.remove();
+	}
+
 }
